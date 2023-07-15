@@ -1,5 +1,13 @@
 import numpy as np
-import pydart2 as pydart
+#import pydart2 as pydart
+import dartpy as dart
+
+
+
+import sys
+sys.path.append('C:/work/pose_estimation/movingcam')
+
+
 from PyCommon.modules.GUI import DartViewer as hsv
 from PyCommon.modules.Renderer import ysRenderer as yr
 from PyCommon.modules.Math import mmMath as mm
@@ -136,15 +144,16 @@ name_idx_map = {
 
 
 if __name__ == "__main__":
-    video_name = input("video name?")
-    # video_name = 'high_jump4'
+    # video_name = input("video name?")
+    video_name = 'ollie'
+    base_path = 'C:/work/pose_estimation/movingcam'
 
-    frame_rate = subprocess.check_output(f"ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate -of csv=s=x:p=0 /home/trif/works/foot_contact_learning/data/{video_name}.mp4", shell=True)
+    frame_rate = subprocess.check_output(f"ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate -of csv=s=x:p=0 {base_path}/data/openpose/{video_name}/{video_name}.mp4", shell=True)
     frame_rate = list(map(float, frame_rate.decode().split('/')))
     fps = int(frame_rate[0] / frame_rate[1] + 0.1)
     print(fps)
 
-    file_path = 'data/vibe/' + video_name +'/vibe_output.pkl'
+    file_path = base_path + '/data/vibe/' + video_name +'/vibe_output.pkl'
     data = joblib.load(file_path)
     print(len(data))
     print(data.keys())
@@ -173,13 +182,21 @@ if __name__ == "__main__":
     print("joint_num:", joint_num)
     print(joint_3d_infos.shape)
 
-    pydart.init()
-    world = pydart.World(1./30., 'data/skel/human_mass_limited_dof_v2.skel')
-    skel = world.skeletons[1]
+    #pydart.init()
+    #world = pydart.World(1./30., 'data/skel/human_mass_limited_dof_v2.skel')
+    #skel = world.skeletons[1]
 
-    offset = [skel.body(0).to_world()]
+    world = dart.io.SkelParser.readWorld('data/skel/human_mass_limited_dof_v2.skel')
+    world.setGravity([0, -9.81, 0])
+    world.setTimeStep(1.0 / 30)
+    skel = world.getSkeleton(1)
+    # skel.getBodyNode('h_spine').World()
+
+    #offset = [skel.body(0).to_world()]
+    offset = [skel.getBodyNode('h_spine').World()]
+    print(f'offset {offset}')
     offset = [np.zeros(3)]
-    
+
     motion = DartSkelMotion()
     motion.fps = fps
 

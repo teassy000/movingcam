@@ -27,7 +27,9 @@ from PyCommon.modules.Motion import ysMotion as ym
 # from PyCommon.modules.pyVirtualPhysics import *
 # from PyCommon.modules.Simulator import csVpUtil as cvu
 # from PyCommon.modules.Simulator import csDartModel as cdm
-import pydart2 as pydart
+# import pydart2 as pydart
+import dartpy as dart
+
 import fltk
 
 # RendererContext

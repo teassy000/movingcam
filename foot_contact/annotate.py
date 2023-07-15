@@ -46,13 +46,16 @@ def make_one_frame_vector(_data, _people_id):
 
 
 if __name__ == '__main__':
-    motion_name = input("motion name? ")
-    # motion_name = 'parkour14_whole'
-    motion_path = '/home/user/works/foot_contact/data'
-    json_path = f'/home/user/works/foot_contact/enhance_test/{motion_name}/{motion_name}_enhance'
-    output_path = '/home/user/works/foot_contact/test_rempe/' + motion_name
+    #motion_name = input("motion name? ")
+    motion_name = 'ollie'
+    openpose_path = f'C:/work/pose_estimation/openpose_demo'
+    base_dir = f'C:/work/pose_estimation/movingcam'
+    motion_path = base_dir + '/data/openpose/ollie'
+    json_path = openpose_path + f'/output_json_folder'
+    output_path = base_dir + '/output/' + motion_name
 
-    os.system(f'mkdir -p {output_path}')
+    os.makedirs(output_path, exist_ok=True)
+    #os.system(f'mkdir {output_path}')
 
     # os.system(f'docker run --rm --gpus all -v {output_path}:/openpose/output -v {motion_path}:/openpose/input openpose /openpose/build/examples/openpose/openpose.bin --video /openpose/input/{motion_name}.mp4 --write_json /openpose/output/{motion_name}     --write_video /openpose/output/{motion_name}.mp4                         --display 0 --part_candidates --number_people_max 1 --net_resolution -1x512')
     # os.system(f'docker run --rm --gpus all -v {output_path}:/openpose/output -v {motion_path}:/openpose/input openpose /openpose/build/examples/openpose/openpose.bin --video /openpose/input/{motion_name}.mp4 --write_json /openpose/output/{motion_name}_90  --write_video /openpose/output/{motion_name}_90.mp4  --frame_rotate 90   --display 0 --part_candidates --number_people_max 1 --net_resolution -1x512')
@@ -79,7 +82,7 @@ if __name__ == '__main__':
     previous_pelvis_pixel = np.array([960., 540.])
     for json_idx, json_file_name in enumerate(json_list):
         with open(json_path + '/' + json_file_name, 'r') as json_file:
-            data = json.load(json_file, encoding='utf-8')
+            data = json.load(json_file)
             isvalid, current_fail_indices, previous_pelvis_pixel, people_id = check_json_valid(data, previous_fail_indices, previous_pelvis_pixel, check_body_indices)
             if isvalid:
                 valid_json_input_data_list.append(make_one_frame_vector(data, people_id))
@@ -113,7 +116,7 @@ if __name__ == '__main__':
     device = torch.device("cuda")
 
     model = Net(input_size=3*7*9, output_size=10, is_cuda=torch.cuda.is_available())
-    model_path = 'model_foot/10000.pt'
+    model_path = base_dir + '/foot_contact/model_foot/10000.pt'
 
     model.load_state_dict(torch.load(model_path))
     model = model.to(device)
@@ -141,12 +144,13 @@ if __name__ == '__main__':
                 contact_result[joint][frame] = None
 
     original_image_path = f"{output_path}/{motion_name}_png_ori"
-    os.system(f"mkdir -p {original_image_path}")
+    os.makedirs(original_image_path, exist_ok=True)
+    # os.system(f"mkdir {original_image_path}")
     os.system(f"ffmpeg -loglevel fatal -y -i {motion_path}/{motion_name}.mp4 {original_image_path}/%03d.png")
     contact_result_foot_output = np.asarray([[0, 0] for _ in range(len(json_list))])
     for json_idx, json_file_name in enumerate(json_list):
         with open(json_path + '/' + json_file_name, 'r') as json_file:
-            data = json.load(json_file, encoding='utf-8')
+            data = json.load(json_file)
             if json_idx in vectors_for_rendering.keys() and contact_result[0][json_idx] is not None and contact_result[1][json_idx] is not None:
                 for joint_index in lower_body_indices:
                     if joint_index == 11 and contact_result[0][json_idx] is not None and contact_result[0][json_idx] > 0.49:
@@ -156,14 +160,15 @@ if __name__ == '__main__':
 
     np.save(f"{output_path}/{motion_name}_contact_info_foot.npy", contact_result_foot_output)
 
-    os.system(f"mkdir -p {output_path}/{motion_name}_png_contact_foot")
+    os.makedirs(f"{output_path}/{motion_name}_png_contact_foot", exist_ok=True)
+    # os.system(f"mkdir {output_path}/{motion_name}_png_contact_foot")
     image_list = [f for f in os.listdir(original_image_path) if os.path.isfile(os.path.join(original_image_path, f)) and '.png' in f]
     image_list.sort()
     for json_idx, json_file_name in enumerate(json_list):
         with open(json_path + '/' + json_file_name, 'r') as json_file:
             img = cv2.imread(f"{output_path}/{motion_name}_png_ori/{image_list[json_idx]}")
 
-            data = json.load(json_file, encoding='utf-8')
+            data = json.load(json_file)
             if json_idx in vectors_for_rendering.keys() and contact_result[0][json_idx] is not None and contact_result[1][json_idx] is not None:
                 frame_data = vectors_for_rendering[json_idx].reshape((-1, 3))[:, :2]
                 line_size = 5
