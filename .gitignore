@@ -2,3 +2,8 @@ __pycache__/
 *.pyc
 build/
 *.so
+
+output/
+data/
+*.whl
+*.exe
