@@ -294,11 +294,18 @@ if __name__ == "__main__":
     world = dart.io.SkelParser.readWorld('data/skel/human_mass_limited_dof_v2.skel')
     world.setGravity([0, -9.81, 0])
 
-    skel = world.getSkeleton(1)
+    skel_gnd = world.getSkeleton(0)
+    skel_fullbody = world.getSkeleton(1)
+    
 
-    #world = dart.simulation.World()
-    #world.addSkeleton(skel)
+    root_body_node = skel_fullbody.getBodyNode(0)
+    tf = root_body_node.getWorldTransform()
+    
+    
+    print(tf)
+    body_pos = tf.translation()
 
+    print(f"v:{root_body_node.getCOMLinearVelocity()}, pos: {body_pos}")
 
     # Create world node and add it to viewer
     viewer = dart.gui.Viewer()
@@ -318,7 +325,7 @@ if __name__ == "__main__":
     viewer.setUpViewInWindow(0, 0, 1920, 1080)
     viewer.setCameraHomePosition([8.0, 8.0, 4.0], [0, 0, 0], [0, 1, 0])
     
-    viewer.simulate(True)
+    viewer.simulate(False)
     frameIdx = 0
 
     missing_frames = []
@@ -326,15 +333,142 @@ if __name__ == "__main__":
     motion = DartSkelMotion()
     motion.fps = fps
 
-    while(frameIdx < frame_num):
-        viewer.frame(frameIdx)
-        frameIdx += 1
-        print(frame_ids)
+    hmr_pos = [None]
+    hmr_skel_left_leg = [None]
+    hmr_skel_right_leg = [None]
+    hmr_skel_left_arm = [None]
+    hmr_skel_right_arm = [None]
+    offset = [np.zeros(3)]
+
+    def processPerFrame(frameIdx):
+        del hmr_pos[:]
+        del hmr_skel_left_arm[:]
+        del hmr_skel_right_arm[:]
+        del hmr_skel_left_leg[:]
+        del hmr_skel_right_leg[:]
         if frameIdx in frame_ids:
             data_frame = frame_ids.index(frameIdx)
         else:
             missing_frames.append(frameIdx)
-            #motion.append(skel.getPosition(), skel.getVelocity())
-            continue
+            motion.append(body_pos, root_body_node.getCOMLinearVelocity())
+            return
+        
+        offset[0] = body_pos - joint_3d_infos[data_frame][name_idx_map['j_root']]
+        print(f"body0: {body_pos}, root: {joint_3d_infos[data_frame][name_idx_map['j_root']]}")
+        hmr_pos[:] = joint_3d_infos[data_frame]
+        # for i in range(len(hmr_pos)):
+        #    hmr_pos[i] = np.dot(rot_offset[0], hmr_pos[i] - joint_3d_infos[data_frame][name_idx_map['j_root']]) + skel_gnd.getCOM()
+        hmr_skel_left_leg.append(hmr_pos[name_idx_map['j_thigh_left']])
+        hmr_skel_left_leg.append(hmr_pos[name_idx_map['j_shin_left']])
+        hmr_skel_left_leg.append(hmr_pos[name_idx_map['j_heel_left']])
+
+        hmr_skel_right_leg.append(hmr_pos[name_idx_map['j_thigh_right']])
+        hmr_skel_right_leg.append(hmr_pos[name_idx_map['j_shin_right']])
+        hmr_skel_right_leg.append(hmr_pos[name_idx_map['j_heel_right']])
+
+        hmr_skel_left_arm.append(hmr_pos[name_idx_map['j_neck']])
+        hmr_skel_left_arm.append(hmr_pos[name_idx_map['j_bicep_left']])
+        hmr_skel_left_arm.append(hmr_pos[name_idx_map['j_forearm_left']])
+        hmr_skel_left_arm.append(hmr_pos[name_idx_map['j_hand_left']])
+
+        hmr_skel_right_arm.append(hmr_pos[name_idx_map['j_neck']])
+        hmr_skel_right_arm.append(hmr_pos[name_idx_map['j_bicep_right']])
+        hmr_skel_right_arm.append(hmr_pos[name_idx_map['j_forearm_right']])
+        hmr_skel_right_arm.append(hmr_pos[name_idx_map['j_hand_right']])
+        
+        joints_weights = {
+            'j_thigh_left': 2., 
+            'j_shin_left': 1., 
+            'j_heel_left': 1., 
+            'j_thigh_right': 2., 
+            'j_shin_right': 1., 
+            'j_heel_right': 1., 
+            'j_neck': 1.,
+            'j_bicep_right': 1., 
+            'j_forearm_right': 1., 
+            'j_hand_right': 1.,
+            'j_bicep_left': 1., 
+            'j_forearm_left': 1., 
+            'j_hand_left': 1.
+        }
+
+        joints_fix_weights = {
+            'j_thigh_left_y': 1.,
+            # 'j_shin_left_y': 1.,
+            'j_thigh_right_y': 1.,
+            # 'j_shin_right_y': 1.,
+            'j_abdomen_y': 1.,
+            'j_spine_y': 1.,
+            'j_scapula_left_x': 1.,
+            'j_bicep_left_x': 1.,
+            'j_forearm_left_x': 1.,
+            'j_hand_left_x': 1.,
+            'j_scapula_right_x': 1.,
+            'j_bicep_right_x': 1.,
+            'j_forearm_right_x': 1.,
+            'j_hand_right_x': 1.,
+        }
+
+        def ik_f(x):
+            q = skel_fullbody.getPositions()
+            q_ori = q.copy()
+            q[:3] = x[:3]
+            q[6:] = x[3:]
+            skel_fullbody.setPositions(q)
+            sums = 0
+            
+            for joint_name, joint_weight in joints_weights.items():
+                sums += joint_weight * np.linalg.norm(skel_fullbody.getJoint(joint_name).position_in_world_frame() - hmr_pos[name_idx_map[joint_name]]) ** 2
+            
+            for dof_name, joint_fix_weight in joints_fix_weights.items():
+                dof = skel_fullbody.getDof(dof_name)
+                dofIdx = skel_fullbody.getIndexOfDof(dof)
+                sums += joint_fix_weight * (x[dofIdx - 3] ** 2)
+
+            sums += 0.000001 * (np.linalg.norm(x) ** 2)
+            skel_fullbody.setPositions(q_ori)
+
+            return sums
+        
+        q_0 = np.zeros(skel_fullbody.getNumDofs() - 3)
+        q_ = skel_fullbody.getPositions()
+        q_lb = np.zeros_like(q_0)
+        for i in range(len(q_lb)):
+            q_lb[i] = -np.inf
+        q_lb[skel_fullbody.getJoint('j_shin_left').dofs[0].index_in_skeleton()-3] = skel_fullbody.getJoint('j_shin_left').dofs[0].position_lower_limit()
+        q_lb[skel_fullbody.getJoint('j_shin_right').dofs[0].index_in_skeleton()-3] = skel_fullbody.getJoint('j_shin_right').dofs[0].position_lower_limit()
+        q_ub = np.zeros_like(q_0)
+        for i in range(len(q_ub)):
+            q_ub[i] = np.inf
+        ik_res = minimize(ik_f, q_0, bounds=Bounds(q_lb, q_ub))
+        q_answer = ik_res.x
+        
+        q_[:3] = q_answer[:3]
+        q_[6:] = q_answer[3:]
+        skel_fullbody.setPositions(q_)
+        motion.append(skel_fullbody.q, skel_fullbody.dq)
+
+
+    """
+    viewer.frame(frameIdx)
+    # frameIdx += 1
+    # print(frame_ids)
+    frameIdx = 100
+    processPerFrame(frameIdx)
+
+    """
+    while(frameIdx < frame_num):
+
+        # test specific frame
+        # frameIdx = 20
+        # comment out to run all frames
+
+        viewer.frame(frameIdx)
+        frameIdx += 1
+        # print(frame_ids)
+
+        processPerFrame(frameIdx)
+    
+        
     
 
