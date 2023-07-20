@@ -296,16 +296,6 @@ if __name__ == "__main__":
 
     skel_gnd = world.getSkeleton(0)
     skel_fullbody = world.getSkeleton(1)
-    
-
-    root_body_node = skel_fullbody.getBodyNode(0)
-    tf = root_body_node.getWorldTransform()
-    
-    
-    print(tf)
-    body_pos = tf.translation()
-
-    print(f"v:{root_body_node.getCOMLinearVelocity()}, pos: {body_pos}")
 
     # Create world node and add it to viewer
     viewer = dart.gui.Viewer()
@@ -325,8 +315,7 @@ if __name__ == "__main__":
     viewer.setUpViewInWindow(0, 0, 1920, 1080)
     viewer.setCameraHomePosition([8.0, 8.0, 4.0], [0, 0, 0], [0, 1, 0])
     
-    viewer.simulate(False)
-    frameIdx = 0
+
 
     missing_frames = []
 
@@ -350,9 +339,16 @@ if __name__ == "__main__":
             data_frame = frame_ids.index(frameIdx)
         else:
             missing_frames.append(frameIdx)
-            motion.append(body_pos, root_body_node.getCOMLinearVelocity())
+            motion.append(skel_fullbody.getPositions(), skel_fullbody.getVelocities())
             return
         
+        root_body_node = skel_fullbody.getBodyNode(0)
+        tf = root_body_node.getWorldTransform()
+        print(tf)
+        body_pos = tf.translation()
+
+        print(f"v:{skel_fullbody.getVelocities()}, pos: {body_pos}")
+
         offset[0] = body_pos - joint_3d_infos[data_frame][name_idx_map['j_root']]
         print(f"body0: {body_pos}, root: {joint_3d_infos[data_frame][name_idx_map['j_root']]}")
         hmr_pos[:] = joint_3d_infos[data_frame]
@@ -418,11 +414,14 @@ if __name__ == "__main__":
             sums = 0
             
             for joint_name, joint_weight in joints_weights.items():
-                sums += joint_weight * np.linalg.norm(skel_fullbody.getJoint(joint_name).position_in_world_frame() - hmr_pos[name_idx_map[joint_name]]) ** 2
+                joint = skel_fullbody.getJoint(joint_name)
+                childT = joint.getTransformFromChildBodyNode()
+                #zko: is the translation trans transport to pos?
+                sums += joint_weight * np.linalg.norm(childT.translation() - hmr_pos[name_idx_map[joint_name]]) ** 2
             
             for dof_name, joint_fix_weight in joints_fix_weights.items():
                 dof = skel_fullbody.getDof(dof_name)
-                dofIdx = skel_fullbody.getIndexOfDof(dof)
+                dofIdx = skel_fullbody.getIndexOf(dof)
                 sums += joint_fix_weight * (x[dofIdx - 3] ** 2)
 
             sums += 0.000001 * (np.linalg.norm(x) ** 2)
@@ -435,8 +434,8 @@ if __name__ == "__main__":
         q_lb = np.zeros_like(q_0)
         for i in range(len(q_lb)):
             q_lb[i] = -np.inf
-        q_lb[skel_fullbody.getJoint('j_shin_left').dofs[0].index_in_skeleton()-3] = skel_fullbody.getJoint('j_shin_left').dofs[0].position_lower_limit()
-        q_lb[skel_fullbody.getJoint('j_shin_right').dofs[0].index_in_skeleton()-3] = skel_fullbody.getJoint('j_shin_right').dofs[0].position_lower_limit()
+        q_lb[skel_fullbody.getJoint('j_shin_left').getIndexInSkeleton(0)-3] = skel_fullbody.getJoint('j_shin_left').getPositionLowerLimit(0)
+        q_lb[skel_fullbody.getJoint('j_shin_right').getIndexInSkeleton(0)-3] = skel_fullbody.getJoint('j_shin_right').getPositionLowerLimit(0)
         q_ub = np.zeros_like(q_0)
         for i in range(len(q_ub)):
             q_ub[i] = np.inf
@@ -446,7 +445,46 @@ if __name__ == "__main__":
         q_[:3] = q_answer[:3]
         q_[6:] = q_answer[3:]
         skel_fullbody.setPositions(q_)
-        motion.append(skel_fullbody.q, skel_fullbody.dq)
+        
+        def to_world(node,x=None):
+            if x is None:
+                x = [0.0, 0.0, 0.0]
+            x_ = np.append(x, [1.0])
+            #print(f"to_world x_: {x_}({type(x_)})\
+            #      , transform: {node.getTransform()}({type(node.getTransform())}), \
+            #        translation: {node.getTransform().translation()}({node.getTransform().translation()})")
+
+            return np.dot(node.getTransform().matrix(), x_)[:3]
+
+
+        def footik_f(x):
+            q = skel_fullbody.getPositions()
+            q_ori = q.copy()
+            q[10:13] = x[:3]
+            q[17:20] = x[3:]
+            skel_fullbody.setPositions(q)
+            sums = 0
+            
+            sums += np.linalg.norm(to_world(skel_fullbody.getBodyNode('h_heel_right'), [0.0378, -0.0249, -0.10665]) - hmr_pos[name_idx_map['j_bigtoe_right']]) ** 2
+            sums += np.linalg.norm(to_world(skel_fullbody.getBodyNode('h_heel_right'), [-0.0378, -0.0249, -0.10665]) - hmr_pos[name_idx_map['j_smalltoe_right']]) ** 2
+            sums += np.linalg.norm(to_world(skel_fullbody.getBodyNode('h_heel_right'), [0., -0.0249, 0.10665]) - hmr_pos[name_idx_map['j_trueheel_right']]) ** 2
+            sums += np.linalg.norm(to_world(skel_fullbody.getBodyNode('h_heel_left'), [-0.0378, 0.0249, 0.10665]) - hmr_pos[name_idx_map['j_bigtoe_left']]) ** 2
+            sums += np.linalg.norm(to_world(skel_fullbody.getBodyNode('h_heel_left'), [0.0378, 0.0249, 0.10665]) - hmr_pos[name_idx_map['j_smalltoe_left']]) ** 2
+            sums += np.linalg.norm(to_world(skel_fullbody.getBodyNode('h_heel_left'), [0., 0.0249, -0.10665]) - hmr_pos[name_idx_map['j_trueheel_left']]) ** 2
+            
+            sums += 0.000001 * (np.linalg.norm(x) ** 2)
+            skel_fullbody.setPositions(q_ori)
+
+            return sums
+
+        q_foot_0 = np.zeros(6)
+        q_foot_0[:3] = q_[10:13]
+        q_foot_0[3:] = q_[17:20]
+        q_foot_answer = minimize(footik_f, q_foot_0).x
+        q_[10:13] = q_foot_answer[:3]
+        q_[17:20] = q_foot_answer[3:]
+        skel_fullbody.setPositions(q_)
+        motion.append(skel_fullbody.getPositions(), skel_fullbody.getVelocities())
 
 
     """
@@ -457,10 +495,13 @@ if __name__ == "__main__":
     processPerFrame(frameIdx)
 
     """
+    viewer.simulate(False)
+    frameIdx = 0
+
     while(frameIdx < frame_num):
 
         # test specific frame
-        # frameIdx = 20
+        # frameIdx = 100
         # comment out to run all frames
 
         viewer.frame(frameIdx)
@@ -468,7 +509,16 @@ if __name__ == "__main__":
         # print(frame_ids)
 
         processPerFrame(frameIdx)
-    
+
+    # print(missing_ranges)
+    for missing_range in missing_ranges:
+        range_length = missing_range[1] - missing_range[0]
+        for missing_frame in range(missing_range[0]+1, missing_range[1]):
+            range_index = missing_frame - missing_range[0]
+            motion.set_q(missing_frame, DartSkelMotion.slerp_general(motion.get_q(missing_range[0]), motion.get_q(missing_range[1]), range_index/range_length, skel_fullbody), skel_fullbody.getVelocities())
+
+    motion.refine_dqs_new(skel_fullbody)
+    motion.save('data/vibe/'+video_name+'/'+video_name+'_vibe_dof_limit_v2_false.skmo')
         
     
 

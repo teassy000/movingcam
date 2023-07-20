@@ -50,8 +50,8 @@ if __name__ == '__main__':
     motion_name = 'ollie'
     openpose_path = f'C:/work/pose_estimation/openpose_demo'
     base_dir = f'C:/work/pose_estimation/movingcam'
-    motion_path = base_dir + '/data/openpose/ollie'
-    json_path = openpose_path + f'/output_json_folder'
+    motion_path = base_dir + f'/data/openpose/{motion_name}'
+    json_path = openpose_path + f'/json_{motion_name}'
     output_path = base_dir + '/output/' + motion_name
 
     os.makedirs(output_path, exist_ok=True)
@@ -146,7 +146,9 @@ if __name__ == '__main__':
     original_image_path = f"{output_path}/{motion_name}_png_ori"
     os.makedirs(original_image_path, exist_ok=True)
     # os.system(f"mkdir {original_image_path}")
+    print(f"ffmpeg -loglevel fatal -y -i {motion_path}/{motion_name}.mp4 {original_image_path}/%03d.png")
     os.system(f"ffmpeg -loglevel fatal -y -i {motion_path}/{motion_name}.mp4 {original_image_path}/%03d.png")
+
     contact_result_foot_output = np.asarray([[0, 0] for _ in range(len(json_list))])
     for json_idx, json_file_name in enumerate(json_list):
         with open(json_path + '/' + json_file_name, 'r') as json_file:
@@ -161,11 +163,17 @@ if __name__ == '__main__':
     np.save(f"{output_path}/{motion_name}_contact_info_foot.npy", contact_result_foot_output)
 
     os.makedirs(f"{output_path}/{motion_name}_png_contact_foot", exist_ok=True)
-    # os.system(f"mkdir {output_path}/{motion_name}_png_contact_foot")
+    
     image_list = [f for f in os.listdir(original_image_path) if os.path.isfile(os.path.join(original_image_path, f)) and '.png' in f]
     image_list.sort()
+    print(len(image_list), len(json_list))
+
     for json_idx, json_file_name in enumerate(json_list):
         with open(json_path + '/' + json_file_name, 'r') as json_file:
+
+            #if(json_idx >= len(image_list)):
+            #    continue
+            print(json_idx, f"{image_list[json_idx]}")
             img = cv2.imread(f"{output_path}/{motion_name}_png_ori/{image_list[json_idx]}")
 
             data = json.load(json_file)

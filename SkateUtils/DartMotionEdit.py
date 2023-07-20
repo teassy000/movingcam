@@ -164,6 +164,17 @@ class DartSkelMotion(object):
             self.qs[frame][3] = 0.
             self.qs[frame][4] = -0.02
             self.qs[frame][5] = 0.
+    
+    def reset_root_trajectory_ollie(self, skel):
+        frame_num = len(self.qs)
+
+        for frame in range(frame_num):
+            self.qs[frame][0] = -0.2
+            self.qs[frame][1] = 0.
+            self.qs[frame][2] = 0.0
+            self.qs[frame][3] = 0.
+            self.qs[frame][4] = -0.02
+            self.qs[frame][5] = 0.
 
     def reset_root_trajectory_lateral_jump(self, skel):
         frame_num = len(self.qs)
@@ -236,6 +247,14 @@ class DartSkelMotion(object):
                 self.dqs[frame] = np.asarray(skel.position_differences(self.qs[frame], self.qs[frame-1])) * self.fps
             else:
                 self.dqs[frame] = np.asarray(skel.position_differences(self.qs[frame+1], self.qs[frame])) * self.fps
+
+    def refine_dqs_new(self, skel, start_frame=0):
+        for frame in range(start_frame, len(self.dqs)):
+            if frame == len(self.dqs)-1:
+                self.dqs[frame] = np.asarray(skel.getPositionDifferences(self.qs[frame], self.qs[frame-1])) * self.fps
+            else:
+                self.dqs[frame] = np.asarray(skel.getPositionDifferences(self.qs[frame+1], self.qs[frame])) * self.fps
+
 
     def set_loop(self, begin_frame, end_frame):
         assert(begin_frame >= 0 and end_frame < len(self.qs) and begin_frame < end_frame)
